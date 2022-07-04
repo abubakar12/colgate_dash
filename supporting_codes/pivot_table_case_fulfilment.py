@@ -84,22 +84,28 @@ option_selected = dbc.Container([
 
 
 
+dfs=pd.melt(df,id_vars=['SKU',"Location","Week"],\
+        value_vars=['Actual Sales','Case Fullfilment Rate', 'Adjustment CFR',\
+        'System Projections', 'Consensus Projections'],\
+        var_name="Measure_name",value_name="values")
 
+df=pd.pivot_table(dfs,index=['SKU',"Location","Measure_name"],values='values',columns=["Week"]).reset_index()
 
-dfs=pd.pivot_table(df,index=['SKU',"Location"],values='Adjustment CFR',columns=["Week"]).reset_index()
+dfs=df[df["Measure_name"]=='Adjustment CFR']
+# dfs=pd.pivot_table(df,index=['SKU',"Location"],values='Adjustment CFR',columns=["Week"]).reset_index()
     
-app = Dash(__name__, suppress_callback_exceptions=True,external_stylesheets=[dbc.themes.BOOTSTRAP])
+# app = Dash(__name__, suppress_callback_exceptions=True,external_stylesheets=[dbc.themes.BOOTSTRAP])
 main_page_var = dbc.Container(
     [   
         html.H4("Colgate Table"),
         html.Hr(),
-        html.H5(id="text"),
+        html.H5(id="text_cfr_fulfilment"),
         html.Hr(),
         option_selected,
         html.Hr(),
-        dbc.Row(dbc.Col((dcc.Graph(id="graph6")))),
+        dbc.Row(dbc.Col((dcc.Graph(id="graph6_cfr_fulfilment")))),
         html.Hr(),
-        dbc.Row([dbc.Col(id="pivot_table",md=6)]),
+        dbc.Row([dbc.Col(id="pivot_table_cfr",md=6)]),
         html.Hr(),
         dbc.Row(dbc.Col(dbc.Button("Refresh CFR Table",id="refresh_cfr_table",n_clicks=0,color="primary"),md=2)),
         dbc.Row(dbc.Col(dash_table.DataTable(
@@ -113,11 +119,11 @@ main_page_var = dbc.Container(
 
 # dash_table.DataTable(df.to_dict("records"),id="editable_pivottable")
 
-app.layout = main_page_var
-@app.callback(
-    Output("graph6", "figure"), 
-    Output("text", "children"), 
-    Output("pivot_table", "children"), 
+# app.layout = main_page_var
+@callback(
+    Output("graph6_cfr_fulfilment", "figure"), 
+    Output("text_cfr_fulfilment", "children"), 
+    Output("pivot_table_cfr", "children"), 
     Input("sku", "value"),
     Input("location","value"),
     Input("cfr_file","data"),prevent_initial_call=True
@@ -125,11 +131,15 @@ app.layout = main_page_var
 def new_customers(sku,location,df):
     df=pd.DataFrame(df)
     
+    df=pd.melt(df,id_vars=['SKU',"Location","Measure_name"],\
+            var_name="Week",value_name="values")
+    
     df_copy=df.copy()
     df_copy=df_copy[(df_copy["SKU"]==sku)&\
                 (df_copy["Location"]==location)]
+    df_copy=pd.pivot_table(df_copy,index=['SKU',"Location","Week"],values='values',columns=["Measure_name"]).reset_index()
     
-    
+    df_copy=df_copy.sort_values(by="Week")
     
     cols=df.columns.tolist()
     new_df=pd.DataFrame([cols],columns=cols)
@@ -140,10 +150,22 @@ def new_customers(sku,location,df):
         data=datas
         ,
         cols=["Week"],
-        rows=['SKU',  'Location'],
-        vals=['Adjustment CFR','System Projections',"System Projections","Actual Sales"]
+        rows=['SKU', 'Location',"Measure_name"],
+        vals=["values"],
+        aggregatorName='Sum'
           )
     
+    df_copy["sorted_week"]=df_copy["Week"].map({"Week 1":1,
+                                       "Week 2":2,
+                                       "Week 3":3,
+                                       "Week 4":4,
+                                       "Week 5":5,
+                                       "Week 6":6,
+                                       "Week 7":7,
+                                       "Week 8":8,
+                                       "Week 9":9,
+                                       "Week 10":10})
+    df_copy=df_copy.sort_values(by="sorted_week")
      
     fig = go.Figure()
     try:
@@ -193,21 +215,19 @@ def new_customers(sku,location,df):
 
 
 
-@app.callback(
+@callback(
     Output("cfr_file", "data"),
     Input("refresh_cfr_table", "n_clicks"),
     State('editable_pivottable','data'),prevent_initial_call=True
     )
 def edit_casefulfilment_table(refresh_table,pivot_data):
-    df_copy=pivot_data
-    df_copy=pd.DataFrame(df_copy)
-    df_copy=pd.melt(df_copy,id_vars=["SKU","Location"],var_name="Week",value_name='Adjustment CFR')
-    dfs=df.drop(["Week",'Adjustment CFR'],axis=1)
-    df_copy=pd.merge(dfs,df_copy,on=["SKU","Location"],how="left")
+    
+    pivot_data=pd.DataFrame(pivot_data)
+    # df_copy=pd.melt(df_copy,id_vars=["SKU","Location"],var_name="Week",value_name='Adjustment CFR')
+    df_copy=df[~(df["Measure_name"]=='Adjustment CFR')]
+    df_copy=pd.concat([df_copy,pivot_data])
+    
     df_copy.to_csv(r"result.csv")
     return df_copy.to_dict('records')
 
 
-server = app.server
-if __name__ == '__main__':
-    app.run_server(debug=True,port=3100)
